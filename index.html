@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Финмодель проекта «Полярный Хаб» — Самостоятельный майнинг (веб‑калькулятор)</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#0f172a; --line:#1f2a44; --text:#e5e7eb; --muted:#9ca3af;
+    --input:#1e293b; --input-br:#324155; --calc:#0b1220; --calc-br:#1f2a44;
+    --accent:#60a5fa; --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  }
+  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;background:linear-gradient(180deg,#0b1220,#0a1020);color:var(--text)}
+  .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+  h1{margin:0 0 6px;font-size:24px;font-weight:900}
+  .subtitle{color:var(--muted);margin:0 0 16px}
+  .grid{display:grid;gap:12px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .card{background:rgba(255,255,255,0.04);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .title{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .title .badge{font-size:12px;background:var(--accent);color:#001b3d;padding:2px 8px;border-radius:999px;font-weight:800}
+  label{font-size:12px;color:var(--muted);display:block;margin:0 0 6px}
+  input,select,textarea{width:100%;background:var(--input);border:1px solid var(--input-br);border-radius:8px;color:var(--text);padding:9px 10px;outline:none}
+  input[type="number"]{text-align:right}
+  textarea.model-input{min-height:68px;resize:vertical;line-height:1.25;white-space:pre-wrap;word-break:break-word}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid var(--line);padding:10px 6px;vertical-align:top} /* tighter horizontal padding */
+  th{color:var(--muted);font-weight:700;text-align:left}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .table{border:1px solid var(--line);border-radius:8px;overflow-x:auto} /* scroll enabled just in case */
+  .calc-cell{background:var(--calc);border:1px solid var(--calc-br);border-radius:8px;padding:10px 12px}
+  .note{font-size:12px;color:var(--muted);margin-top:6px}
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+  .kpi{background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);border-radius:12px;padding:12px}
+  .kpi .val{font-size:20px;font-weight:800}
+  .kpi .cap{font-size:12px;color:var(--muted)}
+  .muted{color:var(--muted)}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .btn{background:linear-gradient(180deg,#1f2937,#111827);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:10px 14px;cursor:pointer;font-weight:700}
+  .btn.primary{background:linear-gradient(180deg,#2563eb,#1e3a8a);border-color:#1d4ed8}
+  .pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-left:6px}
+  .help{font-size:12px;color:var(--muted)}
+
+  /* === Блок 2: ужатые колонки, чтобы влезало, но со скроллом на всякий случай === */
+  #asicTable{table-layout:fixed}
+  /* Общая цель: суммарная ширина ≲ 1000–1040px */
+  #asicTable th:nth-child(1), #asicTable td:nth-child(1){width:180px}  /* Модель (textarea) */
+  #asicTable th:nth-child(2), #asicTable td:nth-child(2){width:68px}   /* TH/s */
+  #asicTable th:nth-child(3), #asicTable td:nth-child(3){width:68px}   /* W */
+  #asicTable th:nth-child(4), #asicTable td:nth-child(4){width:84px}   /* USD */
+  #asicTable th:nth-child(5), #asicTable td:nth-child(5){width:64px}   /* Наценка % */
+  #asicTable th:nth-child(6), #asicTable td:nth-child(6){width:64px}   /* НДС (эфф.) */
+  #asicTable th:nth-child(7), #asicTable td:nth-child(7){width:104px}  /* Цена ₽/ед. */
+  #asicTable th:nth-child(8), #asicTable td:nth-child(8){width:64px}   /* Кол-во */
+  #asicTable th:nth-child(9), #asicTable td:nth-child(9){width:104px}  /* CAPEX ₽ */
+  #asicTable th:nth-child(10), #asicTable td:nth-child(10){width:86px} /* Хешрейт TH/s */
+  #asicTable th:nth-child(11), #asicTable td:nth-child(11){width:86px} /* Мощность кВт */
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Финмодель проекта «Полярный Хаб» — Самостоятельный майнинг</h1>
+  <div class="subtitle">Структура как в Excel: <b>1) Вводные</b> → <b>2) АСИКи</b> → <b>3) Доходы</b> → <b>4) OPEX</b> → <b>5) CAPEX</b> → <b>6) Финмодель</b>. Поля ввода — светлее, расчётные — темнее.</div>
+
+  <!-- Блок 1 — Вводные -->
+  <div class="card">
+    <div class="title"><span class="badge">Блок 1</span><h2 style="margin:0">Вводные</h2></div>
+    <div class="grid-3">
+      <div><label>USD/RUB (курс)</label><input id="usdRub" type="number" step="0.01" value="90"></div>
+      <div><label>Дней в году</label><input id="daysYear" type="number" step="1" value="365"></div>
+      <div><label>Uptime (загрузка), %</label><input id="uptime" type="number" step="0.1" value="90"></div>
+    </div>
+    <div class="grid-3">
+      <div><label>Комиссия пула, %</label><input id="poolFee" type="number" step="0.1" value="2"></div>
+      <div><label>Доход на 1 PH·день (валовая), ₽</label><input id="rurPerPHDay" type="number" step="10" value="4800"></div>
+      <div><label>Тариф электроэнергии, ₽/кВт·ч</label><input id="tariff" type="number" step="0.01" value="7.0"></div>
+    </div>
+    <div class="grid-3">
+      <div><label>Процент удорожания к заводской цене, %</label><input id="markupPct" type="number" step="0.1" value="25"></div>
+      <div><label>НДС на оборудование, %</label><input id="vatPct" type="number" step="0.1" value="20"></div>
+      <div><label>СТЗ (АЗРФ): НДС 0%?</label>
+        <select id="stz"><option value="Y">Да</option><option value="N" selected>Нет</option></select>
+      </div>
+    </div>
+    <div class="grid-3">
+      <div><label>Ремонт/ЗИП, % от CAPEX ASIC (год)</label><input id="repairsPct" type="number" step="0.1" value="3"></div>
+      <div><label>ФОТ, млн ₽/год</label><input id="staffMln" type="number" step="0.1" value="5.0"></div>
+      <div><label>Прочие OPEX, млн ₽/год</label><input id="otherMln" type="number" step="0.1" value="2.5"></div>
+    </div>
+    <div class="grid-3">
+      <div><label>Инфраструктурный CAPEX, ₽</label><input id="infraCapex" type="number" step="1000" value="45000000"></div>
+      <div><label>Ставка дисконтирования, % год</label><input id="discAnnual" type="number" step="0.1" value="15"></div>
+      <div><label>Пояснение</label><div class="calc-cell">Ставка ₽/PH·день — валовая (без электроэнергии). Электроэнергия считается в OPEX.</div></div>
+    </div>
+  </div>
+
+  <!-- Блок 2 — АСИКи -->
+  <div class="card">
+    <div class="title"><span class="badge">Блок 2</span><h2 style="margin:0">АСИКи</h2></div>
+    <div class="btn-row">
+      <button class="btn" id="uploadBtn">Загрузить из Excel/CSV</button>
+      <input type="file" id="fileInput" style="display:none" accept=".xlsx,.xls,.csv,.json" />
+      <a class="btn" href="asic_upload_template_v7.csv" download>Скачать шаблон CSV</a>
+      <span class="help">Шаблон: Модель, TH/s, Вт, Зав. цена $, Наценка %, НДС %, Кол-во</span>
+    </div>
+    <div class="table">
+      <table id="asicTable">
+        <thead>
+          <tr>
+            <th>Модель <span class="pill">ввод</span></th>
+            <th class="num">TH/s ед. <span class="pill">ввод</span></th>
+            <th class="num">Вт ед. <span class="pill">ввод</span></th>
+            <th class="num">Зав. цена, $ <span class="pill">ввод</span></th>
+            <th class="num">Наценка, % <span class="pill">ввод</span></th>
+            <th class="num">НДС (эфф.), % <span class="pill">расчёт</span></th>
+            <th class="num">Цена, ₽/ед. <span class="pill">расчёт</span></th>
+            <th class="num">Кол-во, шт <span class="pill">ввод</span></th>
+            <th class="num">CAPEX, ₽ <span class="pill">расчёт</span></th>
+            <th class="num">Хешрейт, TH/s <span class="pill">расчёт</span></th>
+            <th class="num">Мощность, кВт <span class="pill">расчёт</span></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr>
+            <th colspan="8" style="text-align:right">ИТОГО:</th>
+            <th class="num" id="sumCapex">0</th>
+            <th class="num" id="sumTH">0</th>
+            <th class="num" id="sumKW">0</th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="val" id="kpiPH">0 PH/s</div><div class="cap">Суммарный хешрейт</div></div>
+      <div class="kpi"><div class="val" id="kpiPower">0 кВт</div><div class="cap">Суммарная мощность</div></div>
+      <div class="kpi"><div class="val" id="kpiCapexAsic">0 ₽</div><div class="cap">CAPEX ASIC</div></div>
+      <div class="kpi"><div class="val" id="kpiEff">—</div><div class="cap">Энергоэффективность парка, J/TH <span class="muted">(расч.)</span></div></div>
+    </div>
+  </div>
+
+  <!-- Блок 3 — Доходы -->
+  <div class="card">
+    <div class="title"><span class="badge">Блок 3</span><h2 style="margin:0">Доходы</h2></div>
+    <div class="grid-3">
+      <div><label>Суммарный хешрейт, PH/s <span class="muted">(из Блока 2)</span></label><div class="calc-cell" id="phSum">—</div></div>
+      <div><label>₽/PH·день (валовая) <span class="muted">(из Блока 1)</span></label><div class="calc-cell" id="rurPHView">—</div></div>
+      <div><label>Комиссия пула, % <span class="muted">(из Блока 1)</span></label><div class="calc-cell" id="poolFeeView">—</div></div>
+    </div>
+    <div class="grid-3">
+      <div><label>Дней в году <span class="muted">(из Блока 1)</span></label><div class="calc-cell" id="daysView">—</div></div>
+      <div><label>Uptime, % <span class="muted">(из Блока 1)</span></label><div class="calc-cell" id="uptimeView">—</div></div>
+      <div><label>Годовая выручка, ₽ <span class="muted">(расч.)</span></label><div class="calc-cell" id="revYear">—</div></div>
+    </div>
+    <div class="grid-3">
+      <div><label>Выручка в месяц, ₽ <span class="muted">(расч.)</span></label><div class="calc-cell" id="revMonth">—</div></div>
+      <div><label>₽/PH·день (чистая после пула) <span class="muted">(расч.)</span></label><div class="calc-cell" id="phNet">—</div></div>
+      <div><label>Комментарий</label><div class="calc-cell">Валовая ставка × (1 − комиссия пула) × Uptime × дни формирует годовую выручку.</div></div>
+    </div>
+  </div>
+
+  <!-- Блок 4 — OPEX -->
+  <div class="card">
+    <div class="title"><span class="badge">Блок 4</span><h2 style="margin:0">OPEX</h2></div>
+    <div class="grid-3">
+      <div><label>КВт·ч в год <span class="muted">(расч.)</span></label><div class="calc-cell" id="kwhYear">—</div></div>
+      <div><label>Электроэнергия, ₽/год <span class="muted">(расч.)</span></label><div class="calc-cell" id="enYear">—</div></div>
+      <div><label>Ремонт/ЗИП, ₽/год <span class="muted">(расч.)</span></label><div class="calc-cell" id="repYear">—</div></div>
+    </div>
+    <div class="grid-3">
+      <div><label>ФОТ, ₽/год <span class="muted">(из Блока 1)</span></label><div class="calc-cell" id="staffYear">—</div></div>
+      <div><label>Прочие, ₽/год <span class="muted">(из Блока 1)</span></label><div class="calc-cell" id="otherYear">—</div></div>
+      <div><label>Итого OPEX, ₽/год <span class="muted">(расч.)</span></label><div class="calc-cell" id="opexYear">—</div></div>
+    </div>
+    <div class="grid-3">
+      <div><label>EBITDA, ₽/год <span class="muted">(расч.)</span></label><div class="calc-cell" id="ebitdaYear">—</div></div>
+      <div><label>Маржа EBITDA, % <span class="muted">(расч.)</span></label><div class="calc-cell" id="ebitdaMargin">—</div></div>
+      <div><label>Комментарий</label><div class="calc-cell">При «валовой» ставке ₽/PH·день OPEX включает электричество. Если хотите «чистую» ставку, уберите электричество из OPEX.</div></div>
+    </div>
+  </div>
+
+  <!-- Блок 5 — CAPEX -->
+  <div class="card">
+    <div class="title"><span class="badge">Блок 5</span><h2 style="margin:0">CAPEX</h2></div>
+    <div class="grid-3">
+      <div><label>CAPEX ASIC, ₽ <span class="muted">(из Блока 2)</span></label><div class="calc-cell" id="capexAsic">—</div></div>
+      <div><label>Инфраструктурный CAPEX, ₽ <span class="muted">(из Блока 1)</span></label><div class="calc-cell" id="capexInfra">—</div></div>
+      <div><label>ИТОГО CAPEX, ₽ <span class="muted">(расч.)</span></label><div class="calc-cell" id="capexTotal">—</div></div>
+    </div>
+  </div>
+
+  <!-- Блок 6 — Финмодель -->
+  <div class="card">
+    <div class="title"><span class="badge">Блок 6</span><h2 style="margin:0">Финмодель (5 лет)</h2></div>
+    <div class="grid-3">
+      <div><label>NPV (5 лет), ₽ <span class="muted">(расч.)</span></label><div class="calc-cell" id="npv5">—</div></div>
+      <div><label>IRR (годовая), % <span class="muted">(расч.)</span></label><div class="calc-cell" id="irrY">—</div></div>
+      <div><label>Окупаемость (PP), лет <span class="muted">(расч.)</span></label><div class="calc-cell" id="ppYears">—</div></div>
+    </div>
+    <div class="grid-3">
+      <div><label>Годовая выручка, ₽</label><div class="calc-cell" id="fmRevY">—</div></div>
+      <div><label>ИТОГО OPEX, ₽/год</label><div class="calc-cell" id="fmOpexY">—</div></div>
+      <div><label>EBITDA, ₽/год</label><div class="calc-cell" id="fmEbitdaY">—</div></div>
+    </div>
+    <div class="grid-3">
+      <div><label>CAPEX, ₽</label><div class="calc-cell" id="fmCapex">—</div></div>
+      <div><label>Комментарий</label><div class="calc-cell">CF0 = −CAPEX; CF1..CF5 = годовая EBITDA. Ставка дисконтирования — из Блока 1.</div></div>
+      <div><label>Денежные потоки (таблица)</label><div class="calc-cell">Ниже таблица CF по годам и кнопка выгрузки в CSV.</div></div>
+    </div>
+
+    <div class="table" style="margin-top:8px; max-height:260px; overflow:auto;">
+      <table id="cfYearsTable">
+        <thead>
+          <tr><th>Год</th><th>CF, ₽</th><th>Кумулятивный, ₽</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="downloadCsv">Скачать CF (CSV)</button>
+      <button class="btn primary" id="printBtn">Печать / PDF</button>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="val" id="kpiYRev">—</div><div class="cap">Выручка, ₽/год</div></div>
+    <div class="kpi"><div class="val" id="kpiYOpex">—</div><div class="cap">OPEX, ₽/год</div></div>
+    <div class="kpi"><div class="val" id="kpiYEBITDA">—</div><div class="cap">EBITDA, ₽/год</div></div>
+    <div class="kpi"><div class="val" id="kpiPHday">—</div><div class="cap">₽/PH·день (net после пула)</div></div>
+  </div>
+
+  <div class="note">Блок 2: столбцы дополнительно ужаты, «Модель» слегка поуже; горизонтальный скролл включён «на всякий случай».</div>
+  <div style="height:24px"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+const fmt = new Intl.NumberFormat('ru-RU');
+const money = v => isFinite(v) ? fmt.format(Math.round(v)) + ' ₽' : '—';
+const num = v => isFinite(v) ? fmt.format(+v) : '—';
+const el = id => document.getElementById(id);
+
+function npv_annual(rate, cfs){
+  let v=0;
+  for(let t=0;t<cfs.length;t++){ v += cfs[t] / Math.pow(1+rate, t); }
+  return v;
+}
+function irr(cfs){
+  let lo=-0.99, hi=10;
+  const f=r=>npv_annual(r,cfs);
+  let flo=f(lo), fhi=f(hi);
+  if (flo*fhi>0){
+    for(let k=0;k<30;k++){ hi*=1.5; fhi=f(hi); if(flo*fhi<=0) break; }
+    if (flo*fhi>0) return NaN;
+  }
+  for(let i=0;i<200;i++){
+    const mid=(lo+hi)/2, fm=f(mid);
+    if (Math.abs(fm)<1e-6) return mid;
+    if (flo*fm<=0){ hi=mid; fhi=fm; } else { lo=mid; flo=fm; }
+  }
+  return (lo+hi)/2;
+}
+
+// Prefill (5 rows) — как в v7
+const prefill = [
+  { model:'Antminer S21 Pro', th:234, w:3510, usd:3750, markup:25, count:0 },
+  { model:'Antminer S21e XP Hyd 3U', th:860, w:11180, usd:0, markup:25, count:0 },
+  { model:'Antminer S21 XP+ Hyd', th:500, w:5500, usd:0, markup:25, count:0 },
+  { model:'Antminer S21 XP Hyd', th:473, w:5676, usd:0, markup:25, count:0 },
+  { model:'Antminer S21 (200T)', th:200, w:3500, usd:3500, markup:25, count:0 },
+];
+
+const tbody = document.querySelector('#asicTable tbody');
+function buildTableRows(rows){
+  tbody.innerHTML='';
+  rows.forEach((r, i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><textarea class="model-input" data-idx="${i}" data-field="model" title="${r.model||''}">${r.model||''}</textarea></td>
+      <td class="num"><input data-idx="${i}" data-field="th" type="number" step="0.1" value="${r.th||0}"></td>
+      <td class="num"><input data-idx="${i}" data-field="w" type="number" step="1" value="${r.w||0}"></td>
+      <td class="num"><input data-idx="${i}" data-field="usd" type="number" step="10" value="${r.usd||0}"></td>
+      <td class="num"><input data-idx="${i}" data-field="markup" type="number" step="0.1" value="${r.markup??25}"></td>
+      <td class="num"><div class="calc-cell" id="vat_${i}">—</div></td>
+      <td class="num"><div class="calc-cell" id="priceR_${i}">—</div></td>
+      <td class="num"><input data-idx="${i}" data-field="count" type="number" step="1" value="${r.count||0}"></td>
+      <td class="num"><div class="calc-cell" id="capex_${i}">—</div></td>
+      <td class="num"><div class="calc-cell" id="th_${i}">—</div></td>
+      <td class="num"><div class="calc-cell" id="kw_${i}">—</div></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+buildTableRows(prefill);
+
+function readInputs(){
+  const usdRub = +el('usdRub').value||0;
+  const daysYear = +el('daysYear').value||365;
+  const uptime = (+el('uptime').value||0)/100;
+  const poolFee = (+el('poolFee').value||0)/100;
+  const rurPerPHDay = +el('rurPerPHDay').value||0;
+  const tariff = +el('tariff').value||0;
+  const markupPct = +el('markupPct').value||0;
+  const vatPct = +el('vatPct').value||0;
+  const stz = el('stz').value;
+  const repairsPct = +el('repairsPct').value||0;
+  const staffYear = (+el('staffMln').value||0)*1_000_000;
+  const otherYear = (+el('otherMln').value||0)*1_000_000;
+  const infraCapex = +el('infraCapex').value||0;
+  const discAnnual = (+el('discAnnual').value||0)/100;
+
+  // Rows
+  const rows = [];
+  document.querySelectorAll('#asicTable tbody tr').forEach((tr, i) => {
+    const model = tr.querySelector('[data-field="model"]').value||'';
+    const th = +tr.querySelector('input[data-field="th"]').value||0;
+    const w = +tr.querySelector('input[data-field="w"]').value||0;
+    const usd = +tr.querySelector('input[data-field="usd"]').value||0;
+    const markup = +tr.querySelector('input[data-field="markup"]').value||0;
+    const count = +tr.querySelector('input[data-field="count"]').value||0;
+    rows.push({model,th,w,usd,markup,count});
+  });
+  return {usdRub,daysYear,uptime,poolFee,rurPerPHDay,tariff,markupPct,vatPct,stz,repairsPct,staffYear,otherYear,infraCapex,discAnnual,rows};
+}
+
+function recalc(){
+  const p = readInputs();
+
+  // ----- Блок 2 — расчёт цен и сумм -----
+  let sumCapex = 0, sumTH = 0, sumKW = 0;
+  p.rows.forEach((r, i) => {
+    const effVat = (p.stz==='Y') ? 0 : p.vatPct;
+    const priceR = r.usd * (1 + (r.markup||p.markupPct)/100) * (1 + effVat/100) * p.usdRub;
+    const capex = priceR * r.count;
+    const th = r.th * r.count;
+    const kw = (r.w * r.count)/1000;
+
+    sumCapex += capex; sumTH += th; sumKW += kw;
+
+    document.getElementById('vat_'+i).textContent = num(effVat);
+    document.getElementById('priceR_'+i).textContent = money(priceR);
+    document.getElementById('capex_'+i).textContent = money(capex);
+    document.getElementById('th_'+i).textContent = num(th);
+    document.getElementById('kw_'+i).textContent = num(kw.toFixed(2));
+  });
+  const sumPH = sumTH/1000;
+  const effJperTH = sumTH>0 && sumKW>0 ? (sumKW*1000)/ (sumTH) : NaN;
+  document.getElementById('sumCapex').textContent = money(sumCapex);
+  document.getElementById('sumTH').textContent = num(sumTH);
+  document.getElementById('sumKW').textContent = num(sumKW.toFixed(2));
+  document.getElementById('kpiPH').textContent = isFinite(sumPH)? num(sumPH.toFixed(3))+' PH/s':'—';
+  document.getElementById('kpiPower').textContent = num(sumKW.toFixed(1))+' кВт';
+  document.getElementById('kpiCapexAsic').textContent = money(sumCapex);
+  document.getElementById('kpiEff').textContent = isFinite(effJperTH)? effJperTH.toFixed(1) : '—';
+
+  // ----- Блок 3 — Доходы -----
+  document.getElementById('phSum').textContent = isFinite(sumPH)? num(sumPH.toFixed(3))+' PH/s':'—';
+  document.getElementById('rurPHView').textContent = num(p.rurPerPHDay);
+  document.getElementById('poolFeeView').textContent = num((p.poolFee*100).toFixed(1));
+  document.getElementById('daysView').textContent = num(p.daysYear);
+  document.getElementById('uptimeView').textContent = num((p.uptime*100).toFixed(1));
+
+  const netPHday = p.rurPerPHDay * (1 - p.poolFee);
+  const revYear = sumPH * netPHday * p.uptime * p.daysYear;
+  const revMonth = revYear/12;
+
+  document.getElementById('phNet').textContent = isFinite(netPHday)? num(netPHday.toFixed(0))+' ₽':'—';
+  document.getElementById('revYear').textContent = money(revYear);
+  document.getElementById('revMonth').textContent = money(revMonth);
+
+  // ----- Блок 4 — OPEX -----
+  const kwhYear = sumKW * 24 * p.daysYear * p.uptime;
+  const enYear = kwhYear * p.tariff;
+  const repYear = (p.repairsPct/100) * sumCapex;
+  const opexYear = enYear + p.staffYear + p.otherYear + repYear;
+  const ebitdaYear = revYear - opexYear;
+  const ebitdaMargin = revYear>0 ? (ebitdaYear/revYear)*100 : NaN;
+
+  document.getElementById('kwhYear').textContent = num(Math.round(kwhYear));
+  document.getElementById('enYear').textContent = money(enYear);
+  document.getElementById('repYear').textContent = money(repYear);
+  document.getElementById('staffYear').textContent = money(p.staffYear);
+  document.getElementById('otherYear').textContent = money(p.otherYear);
+  document.getElementById('opexYear').textContent = money(opexYear);
+  document.getElementById('ebitdaYear').textContent = money(ebitdaYear);
+  document.getElementById('ebitdaMargin').textContent = isFinite(ebitdaMargin)? ebitdaMargin.toFixed(1)+' %':'—';
+
+  document.getElementById('kpiYRev').textContent = money(revYear);
+  document.getElementById('kpiYOpex').textContent = money(opexYear);
+  document.getElementById('kpiYEBITDA').textContent = money(ebitdaYear);
+  document.getElementById('kpiPHday').textContent = isFinite(netPHday)? num(netPHday.toFixed(0))+' ₽':'—';
+
+  // ----- Блок 5 — CAPEX -----
+  document.getElementById('capexAsic').textContent = money(sumCapex);
+  document.getElementById('capexInfra').textContent = money(p.infraCapex);
+  const capexTotal = sumCapex + p.infraCapex;
+  document.getElementById('capexTotal').textContent = money(capexTotal);
+
+  // ----- Блок 6 — Финмодель -----
+  const cfs = [-capexTotal, ebitdaYear, ebitdaYear, ebitdaYear, ebitdaYear, ebitdaYear];
+  const npv5 = npv_annual(p.discAnnual, cfs);
+  const irrY = irr(cfs);
+  const ppYears = (ebitdaYear>0)? (capexTotal/ebitdaYear) : NaN;
+
+  document.getElementById('npv5').textContent = money(npv5);
+  document.getElementById('irrY').textContent = isFinite(irrY)? (irrY*100).toFixed(1)+' %':'—';
+  document.getElementById('ppYears').textContent = isFinite(ppYears)? ppYears.toFixed(1) : '—';
+
+  // Summary metrics in Finmodel
+  document.getElementById('fmRevY').textContent = money(revYear);
+  document.getElementById('fmOpexY').textContent = money(opexYear);
+  document.getElementById('fmEbitdaY').textContent = money(ebitdaYear);
+  document.getElementById('fmCapex').textContent = money(capexTotal);
+
+  // Yearly CF table
+  const cfTbody = document.querySelector('#cfYearsTable tbody');
+  cfTbody.innerHTML = '';
+  let cum = 0;
+  const labels = ['0','1','2','3','4','5'];
+  cfs.forEach((v, i)=>{
+    cum += v;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>Год ${labels[i]}</td><td class="num">${money(v)}</td><td class="num">${money(cum)}</td>`;
+    cfTbody.appendChild(tr);
+  });
+
+  // Download CSV
+  const csvBtn = document.getElementById('downloadCsv');
+  csvBtn.onclick = () => {
+    let csv = 'year,cf,cumulative\n';
+    let cum2 = 0;
+    cfs.forEach((v, i)=>{
+      cum2 += v;
+      csv += `${i},${Math.round(v)},${Math.round(cum2)}\n`;
+    });
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cashflows_5y.csv';
+    a.click();
+  };
+}
+
+document.addEventListener('input', e => {
+  if (e.target.matches('input,select,textarea')) recalc();
+});
+document.getElementById('printBtn')?.addEventListener('click', ()=> window.print());
+
+// Upload Excel/CSV
+document.getElementById('uploadBtn').addEventListener('click', ()=> document.getElementById('fileInput').click());
+document.getElementById('fileInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.csv') || name.endsWith('.json')){
+    reader.onload = ev => {
+      try {
+        if (name.endsWith('.json')){
+          const data = JSON.parse(ev.target.result);
+          if (Array.isArray(data)) applyUploadRows(data);
+          else if (Array.isArray(data.rows)) applyUploadRows(data.rows);
+          else alert('JSON должен быть массивом строк или содержать поле rows.');
+        } else { // CSV
+          const text = ev.target.result;
+          const rows = csvParse(text);
+          applyUploadRows(rows);
+        }
+      } catch(err){ alert('Ошибка загрузки: '+err.message); }
+    };
+    reader.readAsText(file, 'utf-8');
+  } else {
+    reader.onload = ev => {
+      try {
+        if (!window.XLSX){ alert('Для XLSX без интернета используйте CSV (Сохранить как CSV).'); return; }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, {type:'array'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
+        applyUploadRows(json);
+      } catch(err){ alert('Не удалось прочитать XLSX: '+err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+});
+function csvParse(text){
+  const lines = text.trim().split(/\r?\n/);
+  const delim = (text.indexOf(';')>-1 && text.indexOf(',')===-1)? ';' : ',';
+  const header = lines[0].split(delim).map(s=>s.trim());
+  const rows = [];
+  for (let i=1;i<lines.length;i++){
+    const cols = lines[i].split(delim).map(s=>s.trim());
+    const obj = {};
+    header.forEach((h,idx)=> obj[h] = cols[idx] ?? '');
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function applyUploadRows(raw){
+  const mapRow = r => ({
+    model: r['Модель'] ?? r['model'] ?? r['Model'] ?? '',
+    th: +(r['TH/s'] ?? r['TH'] ?? r['ths'] ?? 0),
+    w: +(r['Вт'] ?? r['W'] ?? r['w'] ?? 0),
+    usd: +(r['Зав. цена $'] ?? r['USD'] ?? r['usd'] ?? 0),
+    markup: +(r['Наценка %'] ?? r['Markup %'] ?? r['markup'] ?? 25),
+    vat: +(r['НДС %'] ?? r['VAT %'] ?? r['vat'] ?? NaN),
+    count: +(r['Кол-во'] ?? r['Count'] ?? r['qty'] ?? 0),
+  });
+  const rows = raw.slice(0,5).map(mapRow);
+  const trs = document.querySelectorAll('#asicTable tbody tr');
+  for(let i=0;i<5;i++){
+    const r = rows[i] || {};
+    const tr = trs[i];
+    if (!tr) break;
+    tr.querySelector('[data-field="model"]').value = r.model || '';
+    tr.querySelector('input[data-field="th"]').value = isFinite(r.th)? r.th : 0;
+    tr.querySelector('input[data-field="w"]').value = isFinite(r.w)? r.w : 0;
+    tr.querySelector('input[data-field="usd"]').value = isFinite(r.usd)? r.usd : 0;
+    tr.querySelector('input[data-field="markup"]').value = isFinite(r.markup)? r.markup : 25;
+    tr.querySelector('input[data-field="count"]').value = isFinite(r.count)? r.count : 0;
+  }
+  recalc();
+}
+
+recalc();
+</script>
+</body>
+</html>
